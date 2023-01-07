@@ -23,6 +23,8 @@
 #include <SPI.h>
 #include <SD.h>
 const int LOG_PERIOD_MS = 5000;
+long int logTimeout = 0;
+const int DISPLAY_PERIOD_MD = 500;
 
 const int LED_RED = 13;
 const int LED_GREEN = 8;
@@ -37,11 +39,13 @@ char headerStr[14] = "time,a0,a1,a2";
 void setup() {
   pinMode(LED_RED, OUTPUT);
   pinMode(LED_GREEN, OUTPUT);
+
   // Open serial communications and wait for port to open:
   Serial.begin(9600);
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
-  }
+  delay(2000);
+  // while (!Serial) {
+  //   ; // wait for serial port to connect. Needed for native USB port only
+  // }
 
   Serial.println("Initializing SD card...");
 
@@ -71,14 +75,13 @@ void setup() {
     dataFile.println(headerStr);
     dataFile.close();
     Serial.println(headerStr);
-  }
-  else {
+  } else {
     errorLoop();
   }
 }
 
 void errorLoop() {
-  while(1) {
+  while (1) {
     digitalWrite(LED_GREEN, HIGH);
     digitalWrite(LED_RED, LOW);
     delay(200);
@@ -89,41 +92,46 @@ void errorLoop() {
 }
 
 void loop() {
-  digitalWrite(LED_RED, HIGH);
-
   // make a string for assembling the data to log:
-  String dataString = String((iLoop * LOG_PERIOD_MS) / 1000) + ",";
+  String dataString = String(millis() / 1000) + ",";
 
   // read three sensors and append to the string:
   for (int analogPin = 0; analogPin < 3; analogPin++) {
     float sensor = analogRead(analogPin) * (3.3 / 1023.0);
+    if (analogPin == 2) {
+      if (sensor > 3.0) {
+        digitalWrite(LED_RED, HIGH);
+      } else {
+        digitalWrite(LED_RED, LOW);
+      }
+    }
     dataString += String(sensor);
     if (analogPin < 2) {
       dataString += ",";
     }
   }
+  Serial.println(dataString);
 
   // open the file. note that only one file can be open at a time,
   // so you have to close this one before opening another.
-  digitalWrite(LED_RED, LOW);
-  digitalWrite(LED_GREEN, HIGH);
-  File dataFile = SD.open(filename, FILE_WRITE);
+  if (millis() - logTimeout > LOG_PERIOD_MS) {
+    digitalWrite(LED_GREEN, HIGH);
+    File dataFile = SD.open(filename, FILE_WRITE);
 
-  // if the file is available, write to it:
-  if (dataFile) {
-    dataFile.println(dataString);
-    dataFile.close();
-    // print to the serial port too:
-    Serial.println(dataString);
+    // if the file is available, write to it:
+    if (dataFile) {
+      dataFile.println(dataString);
+      dataFile.close();
+      digitalWrite(LED_GREEN, LOW);  // turn off if successful
+    }
+    // if the file isn't open, pop up an error:
+    else {
+      Serial.println("error opening file");
+      errorLoop();
+    }
+    logTimeout = millis();
   }
-  // if the file isn't open, pop up an error:
-  else {
-    Serial.println("error opening file");
-    errorLoop();
-  }
-  digitalWrite(LED_GREEN, LOW);
-  digitalWrite(LED_RED, HIGH);
 
-  delay(LOG_PERIOD_MS);
+  delay(DISPLAY_PERIOD_MD);
   iLoop++;
 }
